@@ -174,8 +174,8 @@ static_assert(!(RAD_WINDOWS && RAD_MACOS), "env invalid os");
 #define RAD_YIELD_PROCESSOR() sched_yield()
 #endif
 
-#define _RAD_CONCAT(x, y) x##y
-#define RAD_CONCAT(x, y)  _RAD_CONCAT(x, y)
+#define RAD_CONCAT_INNER(x, y) x##y
+#define RAD_CONCAT(x, y)       RAD_CONCAT_INNER(x, y)
 
 #if RAD_USER_MODE && RAD_DBG
 #include <assert.h>
@@ -241,6 +241,13 @@ inline bool DoAssert(const char* Assertion, const char* File, int Line)
 #else
 #define RAD_S_ASSERT_NOTHROW(x)       RAD_S_ASSERT(true)
 #define RAD_S_ASSERT_NOTHROWMSG(x, m) RAD_S_ASSERT(true)
+#endif
+
+//
+// Enables requiring explicit atomic ordering.
+//
+#ifndef RAD_REQUIRE_EXPLICIT_ATOMIC_ORDERING
+#define RAD_REQUIRE_EXPLICIT_ATOMIC_ORDERING 1
 #endif
 
 //
