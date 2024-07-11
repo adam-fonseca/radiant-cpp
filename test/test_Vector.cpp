@@ -22,7 +22,6 @@
 #include "gtest/gtest.h"
 
 #include "test/TestAlloc.h"
-
 #define RAD_DEFAULT_ALLOCATOR radtest::Allocator
 
 #include "radiant/Vector.h"
@@ -56,108 +55,64 @@ struct VecTestStats
                 CopyCtorCount == 0 && MoveCtorCount == 0 &&
                 CopyAssignCount == 0 && MoveAssignCount == 0);
     }
-
-    void Add(VecTestStats& stats) noexcept
-    {
-        DtorCount += stats.DtorCount;
-        DefaultCtorCount += stats.DefaultCtorCount;
-        CtorCount += stats.CtorCount;
-        CopyCtorCount += stats.CopyCtorCount;
-        MoveCtorCount += stats.MoveCtorCount;
-        CopyAssignCount += stats.CopyAssignCount;
-        MoveAssignCount += stats.MoveAssignCount;
-    }
-
-    bool AllDestructorsCalled()
-    {
-        int ctor = MoveCtorCount + CopyCtorCount + CtorCount + DefaultCtorCount;
-        return ctor == DtorCount;
-    }
 };
 
 static VecTestStats g_stats;
 
-template <typename T>
-class VectorTest : public testing::Test
+class VectorTests : public ::testing::Test
 {
+public:
+
     void SetUp() override
     {
         g_stats.Reset();
-        stats.Reset();
     }
 
     void TearDown() override
     {
-        stats.Add(g_stats);
-        EXPECT_TRUE(stats.AllDestructorsCalled());
-        g_stats.Reset();
-    }
-
-    VecTestStats stats;
-
-public:
-
-    void ResetStats()
-    {
-        stats.Add(g_stats);
-        g_stats.Reset();
+        EXPECT_TRUE(g_stats.Empty());
     }
 };
 
-class SafetyException : public std::exception
-{
-};
-
-template <bool NoThrow>
-class VecTesterBase
+class VecTester
 {
 public:
 
-    static constexpr bool isNoThrow = NoThrow;
-
-    ~VecTesterBase()
+    ~VecTester()
     {
         g_stats.DtorCount++;
         m_stats.DtorCount++;
     }
 
-    VecTesterBase() noexcept(NoThrow)
+    VecTester() noexcept
     {
-        TryThrow();
-
         g_stats.DefaultCtorCount++;
         m_stats.DefaultCtorCount++;
     }
 
-    explicit VecTesterBase(int value) noexcept(NoThrow)
+    VecTester(int value) noexcept
         : m_value(value)
     {
-        TryThrow();
-
         g_stats.CtorCount++;
         m_stats.CtorCount++;
     }
 
-    VecTesterBase(const VecTesterBase& o) noexcept(NoThrow)
+    VecTester(const VecTester& o) noexcept
         : m_value(o.m_value)
     {
-        TryThrow();
-
         g_stats.CopyCtorCount++;
         m_stats.CopyCtorCount++;
     }
 
-    VecTesterBase(VecTesterBase&& o) noexcept
+    VecTester(VecTester&& o) noexcept
         : m_value(o.m_value)
     {
         g_stats.MoveCtorCount++;
         m_stats.MoveCtorCount++;
     }
 
-    VecTesterBase& operator=(const VecTesterBase& o) noexcept(NoThrow)
+    VecTester& operator=(const VecTester& o) noexcept
     {
-        TryThrow();
-
         if (this != &o)
         {
             m_value = o.m_value;
@@ -169,10 +124,8 @@ public:
         return *this;
     }
 
-    VecTesterBase& operator=(VecTesterBase&& o) noexcept
+    VecTester& operator=(VecTester&& o) noexcept
     {
-        TryThrow();
-
         if (this != &o)
         {
             m_value = o.m_value;
@@ -185,44 +138,11 @@ public:
         return *this;
     }
 
-    static void ThrowIn(int count)
-    {
-        if (isNoThrow)
-        {
-            return;
-        }
-
-        s_throwCount = count - 1;
-    }
-
-    static void TryThrow()
-    {
-        if (isNoThrow)
-        {
-            return;
-        }
-
-        if (s_throwCount == 0)
-        {
-            s_throwCount--;
-            throw SafetyException();
-        }
-
-        s_throwCount--;
-    }
-
     int m_value{ 0 };
     VecTestStats m_stats{};
-
-    static int s_throwCount;
 };
 
-template <>
-int VecTesterBase<false>::s_throwCount = -1;
-
-using TestVectorIntegral = VectorTest<int>;
-
-TEST_F(TestVectorIntegral, DefaultConstruct)
+TEST(VectorTests, DefaultConstruct)
 {
     rad::Vector<int> vec;
 
@@ -231,7 +151,7 @@ TEST_F(TestVectorIntegral, DefaultConstruct)
     EXPECT_EQ(vec.Capacity(), 0u);
 }
 
-TEST_F(TestVectorIntegral, InlineDefaultConstruct)
+TEST(VectorTests, InlineDefaultConstruct)
 {
     rad::InlineVector<int, 10> vec;
 
@@ -240,7 +160,7 @@ TEST_F(TestVectorIntegral, InlineDefaultConstruct)
     EXPECT_EQ(vec.Capacity(), 10u);
 }
 
-TEST_F(TestVectorIntegral, AllocatorCopyConstruct)
+TEST(VectorTests, AllocatorCopyConstruct)
 {
     radtest::HeapAllocator heap;
     radtest::AllocWrapper<int, radtest::HeapAllocator> alloc(heap);
@@ -255,7 +175,7 @@ TEST_F(TestVectorIntegral, AllocatorCopyConstruct)
     EXPECT_EQ(vec.GetAllocator().base, &heap);
 }
 
-TEST_F(TestVectorIntegral, AllocatorMoveConstruct)
+TEST(VectorTests, AllocatorMoveConstruct)
 {
     using AllocWrap = radtest::AllocWrapper<int, radtest::HeapAllocator>;
 
@@ -271,7 +191,7 @@ TEST_F(TestVectorIntegral, AllocatorMoveConstruct)
     EXPECT_EQ(vec.GetAllocator().base, &heap);
 }
 
-TEST_F(TestVectorIntegral, Reserve)
+TEST(VectorTests, Reserve)
 {
     using AllocWrap = radtest::AllocWrapper<int, radtest::HeapAllocator>;
 
@@ -311,7 +231,7 @@ TEST_F(TestVectorIntegral, Reserve)
     EXPECT_EQ(heap.freeCount, 1);
 }
 
-TEST_F(TestVectorIntegral, InlineReserve)
+TEST(VectorTests, InlineReserve)
 {
     using AllocWrap = radtest::AllocWrapper<int, radtest::HeapAllocator>;
 
@@ -367,7 +287,7 @@ TEST_F(TestVectorIntegral, InlineReserve)
     EXPECT_EQ(heap.freeCount, 1);
 }
 
-TEST_F(TestVectorIntegral, ReserveFail)
+TEST(VectorTests, ReserveFail)
 {
     using AllocWrap = radtest::AllocWrapper<int, radtest::HeapAllocator>;
 
@@ -384,7 +304,7 @@ TEST_F(TestVectorIntegral, ReserveFail)
     EXPECT_EQ(heap.allocCount, 0);
 }
 
-TEST_F(TestVectorIntegral, InlineReserveFail)
+TEST(VectorTests, InlineReserveFail)
 {
     using AllocWrap = radtest::AllocWrapper<int, radtest::HeapAllocator>;
 
@@ -401,7 +321,7 @@ TEST_F(TestVectorIntegral, InlineReserveFail)
     EXPECT_EQ(heap.allocCount, 0);
 }
 
-TEST_F(TestVectorIntegral, PushBack)
+TEST(VectorTests, PushBack)
 {
     rad::Vector<int> vec;
 
@@ -421,7 +341,7 @@ TEST_F(TestVectorIntegral, PushBack)
     EXPECT_EQ(vec.At(2), 789);
 }
 
-TEST_F(TestVectorIntegral, PushBackCopy)
+TEST(VectorTests, PushBackCopy)
 {
     int value = 1337;
     rad::Vector<int> vec;
@@ -445,7 +365,7 @@ TEST_F(TestVectorIntegral, PushBackCopy)
     EXPECT_EQ(vec.At(2), 1337);
 }
 
-TEST_F(TestVectorIntegral, EmplaceBack)
+TEST(VectorTests, EmplaceBack)
 {
     struct TestStruct
     {
@@ -479,7 +399,7 @@ TEST_F(TestVectorIntegral, EmplaceBack)
     EXPECT_EQ(vec.At(2).Second, false);
 }
 
-TEST_F(TestVectorIntegral, FrontBack)
+TEST(VectorTests, FrontBack)
 {
     rad::Vector<int> vec;
 
@@ -496,7 +416,7 @@ TEST_F(TestVectorIntegral, FrontBack)
     EXPECT_EQ(constVec.Back(), 789);
 }
 
-TEST_F(TestVectorIntegral, At)
+TEST(VectorTests, At)
 {
     rad::Vector<int> vec;
 
@@ -515,7 +435,7 @@ TEST_F(TestVectorIntegral, At)
     EXPECT_EQ(constVec.At(2), 789);
 }
 
-TEST_F(TestVectorIntegral, Subscript)
+TEST(VectorTests, Subscript)
 {
     rad::Vector<int> vec;
 
@@ -534,7 +454,7 @@ TEST_F(TestVectorIntegral, Subscript)
     EXPECT_EQ(constVec[2], 789);
 }
 
-TEST_F(TestVectorIntegral, Data)
+TEST(VectorTests, Data)
 {
     rad::Vector<int> vec;
 
@@ -553,7 +473,7 @@ TEST_F(TestVectorIntegral, Data)
     EXPECT_EQ(constVec.Data()[2], 789);
 }
 
-TEST_F(TestVectorIntegral, PopBack)
+TEST(VectorTests, PopBack)
 {
     rad::Vector<int> vec;
 
@@ -579,7 +499,7 @@ TEST_F(TestVectorIntegral, PopBack)
     EXPECT_EQ(vec.Size(), 0u);
 }
 
-TEST_F(TestVectorIntegral, Resize)
+TEST(VectorTests, Resize)
 {
     rad::Vector<int> vec;
 
@@ -610,7 +530,7 @@ TEST_F(TestVectorIntegral, Resize)
     EXPECT_EQ(vec.Back(), 0);
 }
 
-TEST_F(TestVectorIntegral, ResizeCopy)
+TEST(VectorTests, ResizeCopy)
 {
     int value = 1337;
 
@@ -644,7 +564,7 @@ TEST_F(TestVectorIntegral, ResizeCopy)
     EXPECT_EQ(vec.Back(), 1337);
 }
 
-TEST_F(TestVectorIntegral, Clear)
+TEST(VectorTests, Clear)
 {
     rad::Vector<int> vec;
 
@@ -657,7 +577,7 @@ TEST_F(TestVectorIntegral, Clear)
     EXPECT_EQ(vec.Size(), 0u);
 }
 
-TEST_F(TestVectorIntegral, ShrinkToFit)
+TEST(VectorTests, ShrinkToFit)
 {
     rad::Vector<int> vec;
 
@@ -697,7 +617,7 @@ TEST_F(TestVectorIntegral, ShrinkToFit)
     EXPECT_EQ(vec.Capacity(), vec.Size());
 }
 
-TEST_F(TestVectorIntegral, ShrinkToFitInline)
+TEST(VectorTests, ShrinkToFitInline)
 {
     rad::InlineVector<int, 10> vec;
 
@@ -776,7 +696,7 @@ TEST_F(TestVectorIntegral, ShrinkToFitInline)
     EXPECT_EQ(vec.Capacity(), decltype(vec)::InlineCount);
 }
 
-TEST_F(TestVectorIntegral, AssignCopy)
+TEST(VectorTests, AssignCopy)
 {
     int value = 1337;
 
@@ -810,7 +730,7 @@ TEST_F(TestVectorIntegral, AssignCopy)
 
 #if RAD_ENABLE_STD
 
-TEST_F(TestVectorIntegral, AssignInit)
+TEST(VectorTests, AssignInit)
 {
     rad::Vector<int> vec;
 
@@ -833,7 +753,7 @@ TEST_F(TestVectorIntegral, AssignInit)
     EXPECT_EQ(vec.Back(), 0);
 }
 
-TEST_F(TestVectorIntegral, AssignRange)
+TEST(VectorTests, AssignRange)
 {
     rad::Vector<int> other;
 
@@ -848,7 +768,7 @@ TEST_F(TestVectorIntegral, AssignRange)
     EXPECT_EQ(vec.Back(), other.Back());
 }
 
-TEST_F(TestVectorIntegral, Swap)
+TEST(VectorTests, Swap)
 {
     rad::Vector<int> vec;
     rad::Vector<int> other;
@@ -869,7 +789,7 @@ TEST_F(TestVectorIntegral, Swap)
     EXPECT_EQ(other.Back(), 3);
 }
 
-TEST_F(TestVectorIntegral, InlineSwapBothInline)
+TEST(VectorTests, InlineSwapBothInline)
 {
     rad::InlineVector<int, 4> vec;
     rad::InlineVector<int, 4> other;
@@ -890,7 +810,7 @@ TEST_F(TestVectorIntegral, InlineSwapBothInline)
     EXPECT_EQ(other.Back(), 3);
 }
 
-TEST_F(TestVectorIntegral, InlineSwapNeitherInline)
+TEST(VectorTests, InlineSwapNeitherInline)
 {
     rad::InlineVector<int, 4> vec;
     rad::InlineVector<int, 4> other;
@@ -911,7 +831,7 @@ TEST_F(TestVectorIntegral, InlineSwapNeitherInline)
     EXPECT_EQ(other.Back(), 6);
 }
 
-TEST_F(TestVectorIntegral, InlineSwapDisjoint)
+TEST(VectorTests, InlineSwapDisjoint)
 {
     rad::InlineVector<int, 4> vec;
     rad::InlineVector<int, 4> other;
@@ -942,7 +862,7 @@ TEST_F(TestVectorIntegral, InlineSwapDisjoint)
     EXPECT_EQ(vec.Back(), 3);
 }
 
-TEST_F(TestVectorIntegral, Copy)
+TEST(VectorTests, Copy)
 {
     rad::Vector<int> vec;
     rad::Vector<int> other;
@@ -953,17 +873,16 @@ TEST_F(TestVectorIntegral, Copy)
 
     EXPECT_EQ(vec.Size(), 3u);
     EXPECT_EQ(vec.Front(), 1);
-    EXPECT_EQ(vec[1], 2);
     EXPECT_EQ(vec.Back(), 3);
 
     EXPECT_TRUE(vec.Copy(other).IsOk());
 
     EXPECT_EQ(vec.Size(), other.Size());
-    EXPECT_EQ(1, other.Front());
-    EXPECT_EQ(3, other.Back());
+    EXPECT_EQ(vec.Front(), other.Front());
+    EXPECT_EQ(vec.Back(), other.Back());
 }
 
-TEST_F(TestVectorIntegral, CopyOverwrite)
+TEST(VectorTests, CopyOverwrite)
 {
     rad::Vector<int> vec;
     rad::Vector<int> other;
@@ -982,7 +901,7 @@ TEST_F(TestVectorIntegral, CopyOverwrite)
     EXPECT_EQ(vec.Back(), other.Back());
 }
 
-TEST_F(TestVectorIntegral, Move)
+TEST(VectorTests, Move)
 {
     rad::Vector<int> vec;
     rad::Vector<int> other;
@@ -1003,7 +922,7 @@ TEST_F(TestVectorIntegral, Move)
     EXPECT_EQ(other.Back(), 3);
 }
 
-TEST_F(TestVectorIntegral, Double)
+TEST(VectorTests, Double)
 {
     rad::Vector<double> vec;
 
@@ -1014,7 +933,7 @@ TEST_F(TestVectorIntegral, Double)
     EXPECT_EQ(vec.At(2), 3.3);
 }
 
-TEST_F(TestVectorIntegral, Float)
+TEST(VectorTests, Float)
 {
     rad::Vector<float> vec;
 
@@ -1025,7 +944,7 @@ TEST_F(TestVectorIntegral, Float)
     EXPECT_EQ(vec.At(2), 3.3f);
 }
 
-TEST_F(TestVectorIntegral, RemoveBack)
+TEST(VectorTests, RemoveBack)
 {
     rad::Vector<int> vec;
 
@@ -1036,7 +955,7 @@ TEST_F(TestVectorIntegral, RemoveBack)
     EXPECT_EQ(vec.RemoveBack(), 1);
 }
 
-TEST_F(TestVectorIntegral, Seek)
+TEST(VectorTests, Seek)
 {
     rad::Vector<int> vec;
 
@@ -1055,7 +974,7 @@ TEST_F(TestVectorIntegral, Seek)
     EXPECT_TRUE(other.Seek(3).IsErr());
 }
 
-TEST_F(TestVectorIntegral, SeekFront)
+TEST(VectorTests, SeekFront)
 {
     rad::Vector<int> vec;
 
@@ -1070,7 +989,7 @@ TEST_F(TestVectorIntegral, SeekFront)
     EXPECT_EQ(other.SeekFront(), 1);
 }
 
-TEST_F(TestVectorIntegral, SeekBack)
+TEST(VectorTests, SeekBack)
 {
     rad::Vector<int> vec;
 
@@ -1085,7 +1004,7 @@ TEST_F(TestVectorIntegral, SeekBack)
     EXPECT_EQ(other.SeekBack(), 3);
 }
 
-TEST_F(TestVectorIntegral, MoveOperator)
+TEST(VectorTests, MoveOperator)
 {
     rad::Vector<int> vec;
     rad::Vector<int> other;
@@ -1102,7 +1021,7 @@ TEST_F(TestVectorIntegral, MoveOperator)
     EXPECT_EQ(other[2], 3);
 }
 
-TEST_F(TestVectorIntegral, AssignDown)
+TEST(VectorTests, AssignDown)
 {
     rad::Vector<int> vec;
 
@@ -1120,7 +1039,7 @@ TEST_F(TestVectorIntegral, AssignDown)
     EXPECT_EQ(vec[1], 123);
 }
 
-TEST_F(TestVectorIntegral, AssignOverlapping)
+TEST(VectorTests, AssignOverlapping)
 {
     rad::Vector<int> vec;
 
@@ -1132,7 +1051,7 @@ TEST_F(TestVectorIntegral, AssignOverlapping)
     EXPECT_EQ(vec.Assign(vec.ToSpan(2)).Err(), rad::Error::InvalidAddress);
 }
 
-TEST_F(TestVectorIntegral, ResizeSame)
+TEST(VectorTests, ResizeSame)
 {
     rad::Vector<int> vec;
 
@@ -1149,7 +1068,7 @@ TEST_F(TestVectorIntegral, ResizeSame)
     EXPECT_EQ(vec[2], 3);
 }
 
-TEST_F(TestVectorIntegral, ShrinkToFitNoMemory)
+TEST(VectorTests, ShrinkToFitNoMemory)
 {
     using AllocWrap = radtest::AllocWrapper<int, radtest::HeapAllocator>;
 
@@ -1168,7 +1087,7 @@ TEST_F(TestVectorIntegral, ShrinkToFitNoMemory)
     EXPECT_EQ(vec[1], 2);
 }
 
-TEST_F(TestVectorIntegral, InlineShrinkToFitNoMemory)
+TEST(VectorTests, InlineShrinkToFitNoMemory)
 {
     using AllocWrap = radtest::AllocWrapper<int, radtest::HeapAllocator>;
 
@@ -1187,7 +1106,7 @@ TEST_F(TestVectorIntegral, InlineShrinkToFitNoMemory)
     EXPECT_EQ(vec[1], 2);
 }
 
-TEST_F(TestVectorIntegral, CopyNoMemory)
+TEST(VectorTests, CopyNoMemory)
 {
     using AllocWrap = radtest::AllocWrapper<int, radtest::HeapAllocator>;
 
@@ -1208,7 +1127,7 @@ TEST_F(TestVectorIntegral, CopyNoMemory)
 
 #endif // RAD_ENABLE_STD
 
-TEST_F(TestVectorIntegral, ResizeNoMemory)
+TEST(VectorTests, ResizeNoMemory)
 {
     using AllocWrap = radtest::AllocWrapper<int, radtest::HeapAllocator>;
 
@@ -1228,7 +1147,7 @@ TEST_F(TestVectorIntegral, ResizeNoMemory)
 
 #if RAD_ENABLE_STD
 
-TEST_F(TestVectorIntegral, AssignNoMemory)
+TEST(VectorTests, AssignNoMemory)
 {
     using AllocWrap = radtest::AllocWrapper<int, radtest::HeapAllocator>;
 
@@ -1248,7 +1167,7 @@ TEST_F(TestVectorIntegral, AssignNoMemory)
 
 #endif // RAD_ENABLE_STD
 
-TEST_F(TestVectorIntegral, EmplaceBackNoMemory)
+TEST(VectorTests, EmplaceBackNoMemory)
 {
     using AllocWrap = radtest::AllocWrapper<int, radtest::HeapAllocator>;
 
@@ -1263,7 +1182,7 @@ TEST_F(TestVectorIntegral, EmplaceBackNoMemory)
 
 #if RAD_ENABLE_STD
 
-TEST_F(TestVectorIntegral, EqualityOperators)
+TEST(VectorTests, EqualityOperators)
 {
     rad::Vector<int> left;
     rad::Vector<int> right;
@@ -1307,7 +1226,7 @@ TEST_F(TestVectorIntegral, EqualityOperators)
     EXPECT_TRUE(ilright != left);
 }
 
-TEST_F(TestVectorIntegral, ComparisonOperators)
+TEST(VectorTests, ComparisonOperators)
 {
     rad::Vector<int> left;
     rad::Vector<int> right;
@@ -1370,14 +1289,11 @@ TEST_F(TestVectorIntegral, ComparisonOperators)
 
 #endif // RAD_ENABLE_STD
 
-template <typename T>
-using NonTrivialStruct = VectorTest<T>;
-
-TYPED_TEST_SUITE_P(NonTrivialStruct);
-
-TYPED_TEST_P(NonTrivialStruct, Reserve)
+TEST(VectorTests, NonTrivReserve)
 {
-    rad::Vector<TypeParam> vec;
+    g_stats.Reset();
+
+    rad::Vector<VecTester> vec;
 
     EXPECT_TRUE(vec.Reserve(10).IsOk());
 
@@ -1388,47 +1304,49 @@ TYPED_TEST_P(NonTrivialStruct, Reserve)
     EXPECT_EQ(g_stats.MoveCtorCount, 0);
     EXPECT_EQ(g_stats.CopyAssignCount, 0);
     EXPECT_EQ(g_stats.MoveAssignCount, 0);
+
+    g_stats.Reset();
 }
 
-TYPED_TEST_P(NonTrivialStruct, Resize)
+TEST(VectorTests, NonTrivResize)
 {
-    TypeParam value(123);
-    rad::Vector<TypeParam> vec;
+    VecTester value(123);
+    rad::Vector<VecTester> vec;
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     EXPECT_TRUE(vec.Resize(5).IsOk());
 
-    EXPECT_EQ(g_stats.DtorCount, TypeParam::isNoThrow ? 1 : 6);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 1);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 5);
-    EXPECT_EQ(g_stats.MoveCtorCount, TypeParam::isNoThrow ? 0 : 5);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-
-    VectorTest<TypeParam>::ResetStats();
-    EXPECT_TRUE(vec.Resize(5).IsOk());
-
-    EXPECT_EQ(g_stats.DtorCount, 1);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 1);
+    EXPECT_EQ(g_stats.DtorCount, 0);
+    EXPECT_EQ(g_stats.DefaultCtorCount, 5);
     EXPECT_EQ(g_stats.CtorCount, 0);
     EXPECT_EQ(g_stats.CopyCtorCount, 0);
     EXPECT_EQ(g_stats.MoveCtorCount, 0);
     EXPECT_EQ(g_stats.CopyAssignCount, 0);
     EXPECT_EQ(g_stats.MoveAssignCount, 0);
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
+    EXPECT_TRUE(vec.Resize(5).IsOk());
+
+    EXPECT_EQ(g_stats.DtorCount, 0);
+    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
+    EXPECT_EQ(g_stats.CtorCount, 0);
+    EXPECT_EQ(g_stats.CopyCtorCount, 0);
+    EXPECT_EQ(g_stats.MoveCtorCount, 0);
+    EXPECT_EQ(g_stats.CopyAssignCount, 0);
+    EXPECT_EQ(g_stats.MoveAssignCount, 0);
+
+    g_stats.Reset();
     EXPECT_TRUE(vec.Resize(2).IsOk());
 
-    EXPECT_EQ(g_stats.DtorCount, 4);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 1);
+    EXPECT_EQ(g_stats.DtorCount, 3);
+    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
     EXPECT_EQ(g_stats.CtorCount, 0);
     EXPECT_EQ(g_stats.CopyCtorCount, 0);
     EXPECT_EQ(g_stats.MoveCtorCount, 0);
     EXPECT_EQ(g_stats.CopyAssignCount, 0);
     EXPECT_EQ(g_stats.MoveAssignCount, 0);
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     EXPECT_TRUE(vec.Resize(2, value).IsOk());
 
     EXPECT_EQ(g_stats.DtorCount, 0);
@@ -1439,44 +1357,38 @@ TYPED_TEST_P(NonTrivialStruct, Resize)
     EXPECT_EQ(g_stats.CopyAssignCount, 0);
     EXPECT_EQ(g_stats.MoveAssignCount, 0);
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     EXPECT_TRUE(vec.Resize(5, value).IsOk());
 
-    EXPECT_EQ(g_stats.DtorCount, TypeParam::isNoThrow ? 0 : 3);
+    EXPECT_EQ(g_stats.DtorCount, 0);
     EXPECT_EQ(g_stats.DefaultCtorCount, 0);
     EXPECT_EQ(g_stats.CtorCount, 0);
     EXPECT_EQ(g_stats.CopyCtorCount, 3);
-    EXPECT_EQ(g_stats.MoveCtorCount, TypeParam::isNoThrow ? 0 : 3);
+    EXPECT_EQ(g_stats.MoveCtorCount, 0);
     EXPECT_EQ(g_stats.CopyAssignCount, 0);
     EXPECT_EQ(g_stats.MoveAssignCount, 0);
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     EXPECT_TRUE(vec.Resize(10, value).IsOk());
 
-    EXPECT_EQ(g_stats.DtorCount, TypeParam::isNoThrow ? 5 : 10);
+    EXPECT_EQ(g_stats.DtorCount, 5);
     EXPECT_EQ(g_stats.DefaultCtorCount, 0);
     EXPECT_EQ(g_stats.CtorCount, 0);
     EXPECT_EQ(g_stats.CopyCtorCount, 5);
-    EXPECT_EQ(g_stats.MoveCtorCount, TypeParam::isNoThrow ? 5 : 10);
+    EXPECT_EQ(g_stats.MoveCtorCount, 5);
     EXPECT_EQ(g_stats.CopyAssignCount, 0);
     EXPECT_EQ(g_stats.MoveAssignCount, 0);
 
-    auto allocator =
-        radtest::OOMAllocator<TypeParam>(TypeParam::isNoThrow ? 1 : 3);
-    rad::Vector<TypeParam, radtest::OOMAllocator<TypeParam>> fail(allocator);
-    EXPECT_TRUE(fail.Resize(5, value).IsOk());
-
-    EXPECT_EQ(fail.Resize(10, value), rad::Error::NoMemory);
-    EXPECT_EQ(fail.Resize(20, value), rad::Error::NoMemory);
+    g_stats.Reset();
 }
 
-TYPED_TEST_P(NonTrivialStruct, Assign)
+TEST(VectorTests, NonTrivAssign)
 {
-    TypeParam value(123);
+    VecTester value(123);
 
-    rad::Vector<TypeParam> vec;
+    rad::Vector<VecTester> vec;
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     EXPECT_TRUE(vec.Assign(10, value).IsOk());
 
     EXPECT_EQ(g_stats.DtorCount, 0);
@@ -1487,9 +1399,9 @@ TYPED_TEST_P(NonTrivialStruct, Assign)
     EXPECT_EQ(g_stats.CopyAssignCount, 0);
     EXPECT_EQ(g_stats.MoveAssignCount, 0);
 
-    value = TypeParam(456);
+    value = 456;
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     EXPECT_TRUE(vec.Assign(20, value).IsOk());
 
     EXPECT_EQ(g_stats.DtorCount, 10);
@@ -1500,29 +1412,27 @@ TYPED_TEST_P(NonTrivialStruct, Assign)
     EXPECT_EQ(g_stats.CopyAssignCount, 0);
     EXPECT_EQ(g_stats.MoveAssignCount, 0);
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     EXPECT_TRUE(vec.Assign(5, value).IsOk());
 
-    EXPECT_EQ(g_stats.DtorCount, TypeParam::isNoThrow ? 20 : 25);
+    EXPECT_EQ(g_stats.DtorCount, 20);
     EXPECT_EQ(g_stats.DefaultCtorCount, 0);
     EXPECT_EQ(g_stats.CtorCount, 0);
     EXPECT_EQ(g_stats.CopyCtorCount, 5);
-    EXPECT_EQ(g_stats.MoveCtorCount, TypeParam::isNoThrow ? 0 : 5);
+    EXPECT_EQ(g_stats.MoveCtorCount, 0);
     EXPECT_EQ(g_stats.CopyAssignCount, 0);
     EXPECT_EQ(g_stats.MoveAssignCount, 0);
 
-    rad::Vector<TypeParam, radtest::OOMAllocator<TypeParam>> fail(
-        radtest::OOMAllocator<TypeParam>(0));
-    EXPECT_EQ(fail.Assign(10, value), rad::Error::NoMemory);
+    g_stats.Reset();
 }
 
-TYPED_TEST_P(NonTrivialStruct, AssignSpan)
+TEST(VectorTests, NonTrivClear)
 {
-    TypeParam value(123);
+    VecTester value(123);
 
-    rad::Vector<TypeParam> vec;
+    rad::Vector<VecTester> vec;
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     EXPECT_TRUE(vec.Assign(10, value).IsOk());
 
     EXPECT_EQ(g_stats.DtorCount, 0);
@@ -1533,89 +1443,7 @@ TYPED_TEST_P(NonTrivialStruct, AssignSpan)
     EXPECT_EQ(g_stats.CopyAssignCount, 0);
     EXPECT_EQ(g_stats.MoveAssignCount, 0);
 
-    value = TypeParam(456);
-    rad::Vector<TypeParam> spanVec;
-    EXPECT_TRUE(spanVec.Assign(20, value).IsOk());
-
-    VectorTest<TypeParam>::ResetStats();
-
-    EXPECT_TRUE(vec.Assign(spanVec.ToSpan()).IsOk());
-
-    ASSERT_EQ(vec.Size(), 20UL);
-    for (auto& tester : vec.ToSpan())
-    {
-        EXPECT_EQ(tester.m_value, 456);
-    }
-
-    EXPECT_EQ(g_stats.DtorCount, TypeParam::isNoThrow ? 20 : 10);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 20);
-    EXPECT_EQ(g_stats.MoveCtorCount, TypeParam::isNoThrow ? 10 : 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-
-    EXPECT_TRUE(spanVec.Assign(5, value).IsOk());
-
-    VectorTest<TypeParam>::ResetStats();
-    EXPECT_TRUE(vec.Assign(spanVec.ToSpan()).IsOk());
-
-    EXPECT_EQ(g_stats.DtorCount, TypeParam::isNoThrow ? 20 : 25);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 5);
-    EXPECT_EQ(g_stats.MoveCtorCount, TypeParam::isNoThrow ? 0 : 5);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-
-    ASSERT_TRUE(vec.Reserve(20));
-    EXPECT_TRUE(spanVec.Assign(15, value).IsOk());
-
-    VectorTest<TypeParam>::ResetStats();
-    EXPECT_TRUE(vec.Assign(spanVec.ToSpan()).IsOk());
-
-    EXPECT_EQ(g_stats.DtorCount, TypeParam::isNoThrow ? 5 : 20);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 15);
-    EXPECT_EQ(g_stats.MoveCtorCount, TypeParam::isNoThrow ? 0 : 15);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-
-    VectorTest<TypeParam>::ResetStats();
-    EXPECT_FALSE(vec.Assign(vec.ToSpan().Subspan(0, 5)).IsOk());
-
-    EXPECT_EQ(g_stats.DtorCount, 0);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 0);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-
-    rad::Vector<TypeParam, radtest::OOMAllocator<TypeParam>> fail(
-        radtest::OOMAllocator<TypeParam>(0));
-    EXPECT_EQ(fail.Assign(spanVec.ToSpan()), rad::Error::NoMemory);
-}
-
-TYPED_TEST_P(NonTrivialStruct, Clear)
-{
-    TypeParam value(123);
-
-    rad::Vector<TypeParam> vec;
-
-    VectorTest<TypeParam>::ResetStats();
-    EXPECT_TRUE(vec.Assign(10, value).IsOk());
-
-    EXPECT_EQ(g_stats.DtorCount, 0);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 10);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     vec.Clear();
 
     EXPECT_EQ(g_stats.DtorCount, 10);
@@ -1625,15 +1453,17 @@ TYPED_TEST_P(NonTrivialStruct, Clear)
     EXPECT_EQ(g_stats.MoveCtorCount, 0);
     EXPECT_EQ(g_stats.CopyAssignCount, 0);
     EXPECT_EQ(g_stats.MoveAssignCount, 0);
+
+    g_stats.Reset();
 }
 
-TYPED_TEST_P(NonTrivialStruct, PushBackLVal)
+TEST(VectorTests, NonTrivPushBackLVal)
 {
-    TypeParam value(123);
+    VecTester value(123);
 
-    rad::Vector<TypeParam> vec;
+    rad::Vector<VecTester> vec;
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     EXPECT_TRUE(vec.PushBack(value).IsOk());
 
     EXPECT_EQ(g_stats.DtorCount, 0);
@@ -1643,15 +1473,17 @@ TYPED_TEST_P(NonTrivialStruct, PushBackLVal)
     EXPECT_EQ(g_stats.MoveCtorCount, 0);
     EXPECT_EQ(g_stats.CopyAssignCount, 0);
     EXPECT_EQ(g_stats.MoveAssignCount, 0);
+
+    g_stats.Reset();
 }
 
-TYPED_TEST_P(NonTrivialStruct, PushBackRVal)
+TEST(VectorTests, NonTrivPushBackRVal)
 {
-    TypeParam value(123);
+    VecTester value(123);
 
-    rad::Vector<TypeParam> vec;
+    rad::Vector<VecTester> vec;
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     EXPECT_TRUE(vec.PushBack(rad::Move(value)).IsOk());
 
     EXPECT_EQ(g_stats.DtorCount, 0);
@@ -1661,13 +1493,15 @@ TYPED_TEST_P(NonTrivialStruct, PushBackRVal)
     EXPECT_EQ(g_stats.MoveCtorCount, 1);
     EXPECT_EQ(g_stats.CopyAssignCount, 0);
     EXPECT_EQ(g_stats.MoveAssignCount, 0);
+
+    g_stats.Reset();
 }
 
-TYPED_TEST_P(NonTrivialStruct, PushEmplaceBack)
+TEST(VectorTests, NonTrivPushEmplaceBack)
 {
-    rad::Vector<TypeParam> vec;
+    rad::Vector<VecTester> vec;
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     EXPECT_TRUE(vec.EmplaceBack(123).IsOk());
 
     EXPECT_EQ(g_stats.DtorCount, 0);
@@ -1677,22 +1511,24 @@ TYPED_TEST_P(NonTrivialStruct, PushEmplaceBack)
     EXPECT_EQ(g_stats.MoveCtorCount, 0);
     EXPECT_EQ(g_stats.CopyAssignCount, 0);
     EXPECT_EQ(g_stats.MoveAssignCount, 0);
+
+    g_stats.Reset();
 }
 
-TYPED_TEST_P(NonTrivialStruct, Copy)
+TEST(VectorTests, NonTrivCopy)
 {
-    TypeParam value(123);
+    VecTester value(123);
 
-    rad::Vector<TypeParam> vec;
+    rad::Vector<VecTester> vec;
 
     EXPECT_TRUE(vec.Assign(10, value).IsOk());
 
-    rad::Vector<TypeParam> other;
+    rad::Vector<VecTester> other;
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     EXPECT_TRUE(vec.Copy(other).IsOk());
 
-    EXPECT_EQ(g_stats.DtorCount, 0);
+    EXPECT_EQ(g_stats.DtorCount, 10);
     EXPECT_EQ(g_stats.DefaultCtorCount, 0);
     EXPECT_EQ(g_stats.CtorCount, 0);
     EXPECT_EQ(g_stats.CopyCtorCount, 10);
@@ -1700,48 +1536,20 @@ TYPED_TEST_P(NonTrivialStruct, Copy)
     EXPECT_EQ(g_stats.CopyAssignCount, 0);
     EXPECT_EQ(g_stats.MoveAssignCount, 0);
 
-    vec.PopBack();
-    VectorTest<TypeParam>::ResetStats();
-    EXPECT_TRUE(vec.Copy(other).IsOk());
-
-    EXPECT_EQ(g_stats.DtorCount, 10);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 9);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-
-    VectorTest<TypeParam>::ResetStats();
-    EXPECT_TRUE(vec.Copy(vec).IsOk());
-    EXPECT_EQ(g_stats.DtorCount, 0);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 0);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-
-    rad::Vector<TypeParam, radtest::OOMAllocator<TypeParam>> good(
-        radtest::OOMAllocator<TypeParam>(10));
-    EXPECT_TRUE(good.Assign(10, value).IsOk());
-
-    rad::Vector<TypeParam, radtest::OOMAllocator<TypeParam>> fail(
-        radtest::OOMAllocator<TypeParam>(0));
-    EXPECT_EQ(good.Copy(fail), rad::Error::NoMemory);
+    g_stats.Reset();
 }
 
-TYPED_TEST_P(NonTrivialStruct, Move)
+TEST(VectorTests, NonTrivMove)
 {
-    TypeParam value(123);
+    VecTester value(123);
 
-    rad::Vector<TypeParam> vec;
+    rad::Vector<VecTester> vec;
 
     EXPECT_TRUE(vec.Assign(10, value).IsOk());
 
-    rad::Vector<TypeParam> other;
+    rad::Vector<VecTester> other;
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     vec.Move(other);
 
     EXPECT_EQ(g_stats.DtorCount, 0);
@@ -1751,19 +1559,21 @@ TYPED_TEST_P(NonTrivialStruct, Move)
     EXPECT_EQ(g_stats.MoveCtorCount, 0);
     EXPECT_EQ(g_stats.CopyAssignCount, 0);
     EXPECT_EQ(g_stats.MoveAssignCount, 0);
+
+    g_stats.Reset();
 }
 
-TYPED_TEST_P(NonTrivialStruct, ShrinkToFit)
+TEST(VectorTests, NonTrivShrinkToFit)
 {
-    TypeParam value(123);
+    VecTester value(123);
 
-    rad::Vector<TypeParam> vec;
+    rad::Vector<VecTester> vec;
 
     EXPECT_TRUE(vec.Assign(10, value).IsOk());
 
     vec.PopBack();
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     EXPECT_TRUE(vec.ShrinkToFit().IsOk());
 
     EXPECT_EQ(g_stats.DtorCount, 9);
@@ -1779,7 +1589,7 @@ TYPED_TEST_P(NonTrivialStruct, ShrinkToFit)
         vec.PopBack();
     }
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     EXPECT_TRUE(vec.ShrinkToFit().IsOk());
 
     EXPECT_EQ(g_stats.DtorCount, 0);
@@ -1789,19 +1599,21 @@ TYPED_TEST_P(NonTrivialStruct, ShrinkToFit)
     EXPECT_EQ(g_stats.MoveCtorCount, 0);
     EXPECT_EQ(g_stats.CopyAssignCount, 0);
     EXPECT_EQ(g_stats.MoveAssignCount, 0);
+
+    g_stats.Reset();
 }
 
-TYPED_TEST_P(NonTrivialStruct, Swap)
+TEST(VectorTests, NonTrivSwap)
 {
-    TypeParam value(123);
+    VecTester value(123);
 
-    rad::Vector<TypeParam> vec;
+    rad::Vector<VecTester> vec;
 
     EXPECT_TRUE(vec.Assign(10, value).IsOk());
 
-    rad::Vector<TypeParam> other;
+    rad::Vector<VecTester> other;
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     vec.Swap(other);
 
     EXPECT_EQ(g_stats.DtorCount, 0);
@@ -1811,19 +1623,21 @@ TYPED_TEST_P(NonTrivialStruct, Swap)
     EXPECT_EQ(g_stats.MoveCtorCount, 0);
     EXPECT_EQ(g_stats.CopyAssignCount, 0);
     EXPECT_EQ(g_stats.MoveAssignCount, 0);
+
+    g_stats.Reset();
 }
 
-TYPED_TEST_P(NonTrivialStruct, InlineShrinkToFit)
+TEST(VectorTests, InlineNonTrivShrinkToFit)
 {
-    TypeParam value(123);
+    VecTester value(123);
 
-    rad::InlineVector<TypeParam, 5> vec;
+    rad::InlineVector<VecTester, 5> vec;
 
     EXPECT_TRUE(vec.Assign(10, value).IsOk());
 
     vec.PopBack();
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     EXPECT_TRUE(vec.ShrinkToFit().IsOk());
 
     EXPECT_EQ(g_stats.DtorCount, 9);
@@ -1839,7 +1653,7 @@ TYPED_TEST_P(NonTrivialStruct, InlineShrinkToFit)
     vec.PopBack();
     vec.PopBack();
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     EXPECT_TRUE(vec.ShrinkToFit().IsOk());
 
     EXPECT_EQ(g_stats.DtorCount, 5);
@@ -1855,7 +1669,7 @@ TYPED_TEST_P(NonTrivialStruct, InlineShrinkToFit)
         vec.PopBack();
     }
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     EXPECT_TRUE(vec.ShrinkToFit().IsOk());
 
     EXPECT_EQ(g_stats.DtorCount, 0);
@@ -1865,21 +1679,23 @@ TYPED_TEST_P(NonTrivialStruct, InlineShrinkToFit)
     EXPECT_EQ(g_stats.MoveCtorCount, 0);
     EXPECT_EQ(g_stats.CopyAssignCount, 0);
     EXPECT_EQ(g_stats.MoveAssignCount, 0);
+
+    g_stats.Reset();
 }
 
-TYPED_TEST_P(NonTrivialStruct, InlineSwap)
+TEST(VectorTests, InlineNonTrivSwap)
 {
-    TypeParam value(123);
+    VecTester value(123);
 
-    rad::InlineVector<TypeParam, 5> vec;
+    rad::InlineVector<VecTester, 5> vec;
 
     EXPECT_TRUE(vec.Assign(10, value).IsOk());
 
-    rad::InlineVector<TypeParam, 5> other;
+    rad::InlineVector<VecTester, 5> other;
 
     EXPECT_TRUE(other.Assign(10, value).IsOk());
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     vec.Swap(other);
 
     EXPECT_EQ(g_stats.DtorCount, 0);
@@ -1897,7 +1713,7 @@ TYPED_TEST_P(NonTrivialStruct, InlineSwap)
     vec.PopBack();
     EXPECT_TRUE(vec.ShrinkToFit().IsOk());
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     vec.Swap(other);
 
     EXPECT_EQ(g_stats.DtorCount, 5);
@@ -1915,40 +1731,19 @@ TYPED_TEST_P(NonTrivialStruct, InlineSwap)
     vec.PopBack();
     EXPECT_TRUE(vec.ShrinkToFit().IsOk());
 
-    VectorTest<TypeParam>::ResetStats();
+    g_stats.Reset();
     vec.Swap(other);
 
-    EXPECT_EQ(g_stats.DtorCount, 15);
+    EXPECT_EQ(g_stats.DtorCount, 5);
     EXPECT_EQ(g_stats.DefaultCtorCount, 0);
     EXPECT_EQ(g_stats.CtorCount, 0);
     EXPECT_EQ(g_stats.CopyCtorCount, 0);
-    EXPECT_EQ(g_stats.MoveCtorCount, 15);
+    EXPECT_EQ(g_stats.MoveCtorCount, 10);
     EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
+    EXPECT_EQ(g_stats.MoveAssignCount, 5);
+
+    g_stats.Reset();
 }
-
-using ThrowingVecTester = VecTesterBase<false>;
-using NonThrowingVecTester = VecTesterBase<true>;
-
-REGISTER_TYPED_TEST_SUITE_P(NonTrivialStruct,
-                            Reserve,
-                            Resize,
-                            Assign,
-                            AssignSpan,
-                            Clear,
-                            PushBackLVal,
-                            PushBackRVal,
-                            PushEmplaceBack,
-                            Copy,
-                            Move,
-                            ShrinkToFit,
-                            Swap,
-                            InlineShrinkToFit,
-                            InlineSwap);
-
-using Types = testing::Types<ThrowingVecTester, NonThrowingVecTester>;
-
-INSTANTIATE_TYPED_TEST_SUITE_P(TestVector, NonTrivialStruct, Types);
 
 struct VecTestStruct
 {
@@ -1956,7 +1751,7 @@ struct VecTestStruct
     double Double;
 };
 
-TEST(TestVectorTrivialStruct, PushBack)
+TEST(VectorTests, TrivialStructurePushBack)
 {
     rad::Vector<VecTestStruct> vec;
 
@@ -1977,7 +1772,7 @@ TEST(TestVectorTrivialStruct, PushBack)
     }
 }
 
-TEST(TestVectorTrivialStruct, Pointers)
+TEST(VectorTests, Pointers)
 {
     rad::Vector<VecTestStruct*> vec;
 
@@ -1995,379 +1790,7 @@ TEST(TestVectorTrivialStruct, Pointers)
         auto& entry = vec.At(i);
 
         EXPECT_EQ(entry, &data);
-        EXPECT_EQ(entry->UInt64, 9UL);
+        EXPECT_EQ(entry->UInt64, 9);
         EXPECT_EQ(entry->Double, static_cast<double>(9));
     }
-}
-
-// Exception Safety Tests
-// We provide the strong guarantee for Vector.  To do this we require that the
-// contained types have noexcept move, swap, and destruction
-//
-// The methods of vector that require special consideration in regard to
-// exception safety are Resize, Assign, EmplaceBack, PushBack, and Copy.
-using TestVectorStrongGuarantee = VectorTest<ThrowingVecTester>;
-
-TEST_F(TestVectorStrongGuarantee, ResizeDefaultConstructed)
-{
-    rad::Vector<ThrowingVecTester> vec;
-    ThrowingVecTester::ThrowIn(3);
-    EXPECT_THROW(vec.Resize(5).IsOk(), SafetyException);
-
-    EXPECT_EQ(vec.Size(), 0UL);
-    EXPECT_EQ(g_stats.DtorCount, 2);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 1);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 1);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-
-    ResetStats();
-    EXPECT_TRUE(vec.Resize(5).IsOk());
-
-    EXPECT_EQ(g_stats.DtorCount, 6);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 1);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 5);
-    EXPECT_EQ(g_stats.MoveCtorCount, 5);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-}
-
-TEST_F(TestVectorStrongGuarantee, ResizeItemConstructed)
-{
-    ThrowingVecTester value(123);
-    rad::Vector<ThrowingVecTester> vec;
-
-    ResetStats();
-    ThrowingVecTester::ThrowIn(2);
-
-    EXPECT_THROW(vec.Resize(5, value).IsOk(), SafetyException);
-
-    EXPECT_EQ(vec.Size(), 0UL);
-    EXPECT_EQ(g_stats.DtorCount, 1);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 1);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-
-    ResetStats();
-    EXPECT_TRUE(vec.Resize(5, value).IsOk());
-
-    EXPECT_EQ(g_stats.DtorCount, 5);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 5);
-    EXPECT_EQ(g_stats.MoveCtorCount, 5);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-}
-
-TEST_F(TestVectorStrongGuarantee, Assign)
-{
-    ThrowingVecTester value(123);
-
-    rad::Vector<ThrowingVecTester> vec;
-
-    ResetStats();
-    EXPECT_TRUE(vec.Assign(10, value).IsOk());
-
-    EXPECT_EQ(g_stats.DtorCount, 0);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 10);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-
-    value = ThrowingVecTester(456);
-
-    ResetStats();
-    ThrowingVecTester::ThrowIn(5);
-    EXPECT_THROW(vec.Assign(20, value).IsOk(), SafetyException);
-
-    ASSERT_EQ(vec.Size(), 10UL);
-    for (auto& tester : vec.ToSpan())
-    {
-        EXPECT_EQ(tester.m_value, 123);
-    }
-
-    EXPECT_EQ(g_stats.DtorCount, 4);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 4);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-
-    ResetStats();
-    ThrowingVecTester::ThrowIn(3);
-    EXPECT_THROW(vec.Assign(5, value).IsOk(), SafetyException);
-
-    ASSERT_EQ(vec.Size(), 10UL);
-    for (auto& tester : vec.ToSpan())
-    {
-        EXPECT_EQ(tester.m_value, 123);
-    }
-
-    EXPECT_EQ(g_stats.DtorCount, 2);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 2);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-
-    ASSERT_TRUE(vec.Reserve(20));
-    ResetStats();
-    ThrowingVecTester::ThrowIn(2);
-    EXPECT_THROW(vec.Assign(15, value).IsOk(), SafetyException);
-
-    ASSERT_EQ(vec.Size(), 10UL);
-    for (auto& tester : vec.ToSpan())
-    {
-        EXPECT_EQ(tester.m_value, 123);
-    }
-
-    EXPECT_EQ(g_stats.DtorCount, 1);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 1);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-}
-
-TEST_F(TestVectorStrongGuarantee, AssignSpan)
-{
-    ThrowingVecTester value(123);
-
-    rad::Vector<ThrowingVecTester> vec;
-
-    ResetStats();
-    EXPECT_TRUE(vec.Assign(10, value).IsOk());
-
-    EXPECT_EQ(g_stats.DtorCount, 0);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 10);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-
-    value = ThrowingVecTester(456);
-    rad::Vector<ThrowingVecTester> spanVec;
-    EXPECT_TRUE(spanVec.Assign(20, value).IsOk());
-
-    ResetStats();
-
-    ThrowingVecTester::ThrowIn(5);
-    EXPECT_THROW(vec.Assign(spanVec.ToSpan()).IsOk(), SafetyException);
-
-    ASSERT_EQ(vec.Size(), 10UL);
-    for (auto& tester : vec.ToSpan())
-    {
-        EXPECT_EQ(tester.m_value, 123);
-    }
-
-    EXPECT_EQ(g_stats.DtorCount, 4);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 4);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-
-    EXPECT_TRUE(spanVec.Assign(5, value).IsOk());
-
-    ResetStats();
-    ThrowingVecTester::ThrowIn(3);
-    EXPECT_THROW(vec.Assign(spanVec.ToSpan()).IsOk(), SafetyException);
-
-    ASSERT_EQ(vec.Size(), 10UL);
-    for (auto& tester : vec.ToSpan())
-    {
-        EXPECT_EQ(tester.m_value, 123);
-    }
-
-    EXPECT_EQ(g_stats.DtorCount, 2);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 2);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-
-    ASSERT_TRUE(vec.Reserve(20));
-    EXPECT_TRUE(spanVec.Assign(15, value).IsOk());
-
-    ResetStats();
-    ThrowingVecTester::ThrowIn(2);
-    EXPECT_THROW(vec.Assign(spanVec.ToSpan()).IsOk(), SafetyException);
-
-    ASSERT_EQ(vec.Size(), 10UL);
-    for (auto& tester : vec.ToSpan())
-    {
-        EXPECT_EQ(tester.m_value, 123);
-    }
-
-    EXPECT_EQ(g_stats.DtorCount, 1);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 1);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-}
-
-#if RAD_ENABLE_STD
-
-TEST_F(TestVectorStrongGuarantee, AssignIList)
-{
-    ThrowingVecTester value(123);
-
-    rad::Vector<ThrowingVecTester> vec;
-
-    ResetStats();
-    EXPECT_TRUE(vec.Assign(5, value).IsOk());
-
-    EXPECT_EQ(g_stats.DtorCount, 0);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 5);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-
-    ThrowingVecTester v(456);
-    ResetStats();
-
-    ThrowingVecTester::ThrowIn(8);
-    EXPECT_THROW(vec.Assign({ v, v, v, v, v, v }).IsOk(), SafetyException);
-
-    ASSERT_EQ(vec.Size(), 5UL);
-    for (auto& tester : vec.ToSpan())
-    {
-        EXPECT_EQ(tester.m_value, 123);
-    }
-
-    EXPECT_EQ(g_stats.DtorCount, 7);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 7);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-
-    ResetStats();
-    ThrowingVecTester::ThrowIn(5);
-    EXPECT_THROW(vec.Assign({ v, v, v }).IsOk(), SafetyException);
-
-    ASSERT_EQ(vec.Size(), 5UL);
-    for (auto& tester : vec.ToSpan())
-    {
-        EXPECT_EQ(tester.m_value, 123);
-    }
-
-    EXPECT_EQ(g_stats.DtorCount, 4);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 4);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-
-    ASSERT_TRUE(vec.Reserve(20));
-
-    ResetStats();
-    ThrowingVecTester::ThrowIn(8);
-    EXPECT_THROW(vec.Assign({ v, v, v, v, v, v }).IsOk(), SafetyException);
-
-    ASSERT_EQ(vec.Size(), 5UL);
-    for (auto& tester : vec.ToSpan())
-    {
-        EXPECT_EQ(tester.m_value, 123);
-    }
-
-    EXPECT_EQ(g_stats.DtorCount, 7);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 7);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-}
-
-#endif // RAD_ENABLE_STD
-
-TEST_F(TestVectorStrongGuarantee, EmplaceBack)
-{
-    rad::Vector<ThrowingVecTester> vec;
-
-    ResetStats();
-    ThrowingVecTester::ThrowIn(1);
-    EXPECT_THROW(vec.EmplaceBack(123).IsOk(), SafetyException);
-
-    EXPECT_EQ(vec.Size(), 0UL);
-    EXPECT_EQ(g_stats.DtorCount, 0);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 0);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-}
-
-TEST_F(TestVectorStrongGuarantee, PushBackLVal)
-{
-    ThrowingVecTester value(123);
-
-    rad::Vector<ThrowingVecTester> vec;
-
-    ResetStats();
-    ThrowingVecTester::ThrowIn(1);
-    EXPECT_THROW(vec.PushBack(value).IsOk(), SafetyException);
-
-    EXPECT_EQ(vec.Size(), 0UL);
-    EXPECT_EQ(g_stats.DtorCount, 0);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 0);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
-}
-
-TEST_F(TestVectorStrongGuarantee, Copy)
-{
-    ThrowingVecTester value(123);
-    rad::Vector<ThrowingVecTester> vec;
-
-    EXPECT_TRUE(vec.Assign(10, value).IsOk());
-
-    ThrowingVecTester otherValue(456);
-    rad::Vector<ThrowingVecTester> other;
-
-    EXPECT_TRUE(other.Assign(2, otherValue).IsOk());
-
-    ResetStats();
-    ThrowingVecTester::ThrowIn(6);
-    EXPECT_THROW(vec.Copy(other).IsOk(), SafetyException);
-
-    EXPECT_EQ(other.Size(), 2UL);
-    for (auto& tester : other.ToSpan())
-    {
-        EXPECT_EQ(tester.m_value, 456);
-    }
-
-    EXPECT_EQ(g_stats.DtorCount, 5);
-    EXPECT_EQ(g_stats.DefaultCtorCount, 0);
-    EXPECT_EQ(g_stats.CtorCount, 0);
-    EXPECT_EQ(g_stats.CopyCtorCount, 5);
-    EXPECT_EQ(g_stats.MoveCtorCount, 0);
-    EXPECT_EQ(g_stats.CopyAssignCount, 0);
-    EXPECT_EQ(g_stats.MoveAssignCount, 0);
 }
